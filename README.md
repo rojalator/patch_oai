@@ -15,6 +15,6 @@ Now llm_client has a 'responses.create' function: for example:
     response = llm_client.responses.create(model=LLAMA_MODEL, temperature=2, input="In one sentence, tell me about Stan Laurel")
     print(response.output_text)
 ```
-Rememeber! It's a fake endpoint so you are not really talking to responses.create() but to chat.create()
+Rememeber: It's a fake endpoint so you are not really talking to responses.create() but to chat.create()
 The original code was created by claudeai but I've modified to work better. Well, to work at all but it saved a
 lot of typing initially!
