@@ -10,7 +10,7 @@ def monkey_patch_responses_api(client):
 
         from patch_openai import monkey_patch_responses_api
         llm_client = OpenAI(base_url="http://example.com:8080", api_key=LLAMA_API_KEY")
-        monkey_patch_responses_api(llm)
+        monkey_patch_responses_api(llm_client)
 
     Now llm_client has a 'responses.create' function: for example:
 
