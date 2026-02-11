@@ -1,5 +1,7 @@
-Apply a monkey-patch an OpenAI client to add the responses.create() method by converting calls to chat.completions.create()
-(So it does GATHER -> DESPATCH -> SCATTER, in effect)
+(You just need to download the Python file, you haven't got to 'git' or anything fancy if you don't know how: just click on its name here, use the 'Raw' button and save the displayed file.)
+
+This code (in the Python file) applies a monkey-patch an OpenAI client to add the responses.create() method by converting calls to chat.completions.create()
+(So it does GATHER -> DESPATCH -> SCATTER, in effect). 
 
 Supports all the parameters... well, you can pass them, I've not tested them all, plus I only use a few.
 It's rough and ready but should is useful here and there where there's no support for 'responses'
