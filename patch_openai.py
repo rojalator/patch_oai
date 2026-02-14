@@ -1,4 +1,4 @@
-def monkey_patch_responses_api(client):
+def monkey_patch_responses_api(client, swap_role_names: dict = None):
     """
     Apply a monkey-patch an OpenAI client to add the responses.create() method by converting calls to chat.completions.create()
     (So it does GATHER -> DESPATCH -> SCATTER, in effect)
@@ -17,15 +17,19 @@ def monkey_patch_responses_api(client):
         response = llm_client.responses.create(model=LLAMA_MODEL, temperature=2, input="In one sentence, tell me about Stan Laurel")
         print(response.output_text)
 
-    Rememeber: It's a fake endpoint so you are not really talking to responses.create() but to chat.create()
+    Remember: It's a fake endpoint so you are not really talking to responses.create() but to chat.create()
     The original code was created by claudeai but I've modified to work better. Well, to work at all but it saved a
     lot of typing initially!
 
+    swap_role_names is a dictionary of pairs of strings, where values should be swapped. For example:
+    {'developer': 'system'} indicates that we want to swap 'developer' as a role to 'system' instead. This is because
+    some installations expect 'developer' to be a role, while others expect 'system' to be a role.
     """
 
     class ResponsesNamespace:
-        def __init__(self, chat_client):
+        def __init__(self, chat_client, swap_roles):
             self.chat_client = chat_client
+            self.swaps = swap_roles
 
         def create(self, model, input, modalities=None, instructions=None, metadata=None, temperature=None, top_p=None,
                    max_output_tokens=None, store=None, reasoning_effort=None, **kwargs):
@@ -59,7 +63,13 @@ def monkey_patch_responses_api(client):
             if isinstance(input, str):
                 messages.append({"role": "user", "content": input})
             elif isinstance(input, list):
-                # If already in messages format, extend
+                # Perform any swaps we need
+                if self.swaps:
+                    # E.g., if the list contains 'developer' instead of 'system', replace it:
+                    for i, role in enumerate(input):
+                        if role['role'] in self.swaps:
+                            role['role'] = self.swaps[role['role']]
+                            input[i] = role
                 messages.extend(input)
             else:
                 raise ValueError("'input' value must be a string or list of messages")
