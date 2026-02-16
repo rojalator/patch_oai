@@ -20,3 +20,5 @@ Now llm_client has a 'responses.create' function: for example:
 Rememeber: It's a fake endpoint so you are not really talking to responses.create() but to chat.create()
 The original code was created by claudeai but I've modified to work better. Well, to work at all but it saved a
 lot of typing initially!
+
+The ViolentMonkey script (it's an add-on to WaterFox / FireFox that allows Javascript to be inserted into a page) renders Mermaid diagrams in llama.cpp's built-in web UI, with click to zoom and raw/rendered toggle. It waits for the diagram text to be fully emitted before trying to render (prevents a lot of flickering)
