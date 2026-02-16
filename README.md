@@ -1,4 +1,5 @@
 === patch_openai.py ===
+
 (You just need to download the Python file, you haven't got to 'git' or anything fancy if you don't know how: just click on its name here, use the 'Raw' button and save the displayed file.)
 
 This code (in the Python file) applies a monkey-patch an OpenAI client to add the responses.create() method by converting calls to chat.completions.create()
@@ -29,5 +30,7 @@ Remember: It's a fake endpoint so you are not really talking to responses.create
 The original code was created by claudeai but I've modified to work better. Well, to work at all but it saved a
 lot of typing initially!
 
+
 === render_mermaid.js ===
+
 The ViolentMonkey script (it's an add-on to WaterFox / FireFox that allows Javascript to be inserted into a page) renders Mermaid diagrams in llama.cpp's built-in web UI, with click to zoom and raw/rendered toggle. It waits for the diagram text to be fully emitted before trying to render (prevents a lot of flickering)
