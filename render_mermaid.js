@@ -1,0 +1,269 @@
+// ==UserScript==
+// @name         Wait for render Mermaid Diagrams for llama.cpp
+// @namespace    http://localhost/
+// @version      6.0
+// @description  Renders Mermaid diagrams in llama.cpp's built-in web UI, with zoom and raw/rendered toggle
+// @author       You
+// @match        http://127.0.0.1:8080/* <-- change to your local site:port
+// @grant        none
+// ==/UserScript==
+
+(function () {
+  'use strict';
+
+  const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js';
+  const SETTLE_MS = 1200; // ms of no change before rendering
+  let mermaidReady = false;
+  let currentTheme = 'neutral';
+  const processing = new WeakSet();
+  const blockTimers = new WeakMap();    // per-block settle timers
+  const blockSnapshots = new WeakMap(); // last seen textContent per block
+
+  // ── Styles ───────────────────────────────────────────────────────────────
+  function injectStyles() {
+    if (document.getElementById('mm-styles')) return;
+    const el = document.createElement('style');
+    el.id = 'mm-styles';
+    el.textContent = `
+      .mm-wrapper { margin: 8px 0; }
+      .mm-toolbar { display: flex; gap: 6px; margin-bottom: 4px; }
+      .mm-btn {
+        font-size: 0.75em; padding: 2px 10px; border-radius: 4px;
+        border: 1px solid #555; background: #2a2a3e; color: #ccc;
+        cursor: pointer; user-select: none; transition: background 0.15s;
+      }
+      .mm-btn:hover { background: #3a3a55; }
+      .mm-btn.active { background: #4a4aaa; color: #fff; border-color: #7a7aff; }
+      .mm-diagram {
+        background: #ffffff; border-radius: 8px;
+        padding: 16px; overflow-x: auto; text-align: center; cursor: zoom-in;
+      }
+      .mm-diagram:hover { outline: 1px solid #7a7aff44; }
+      .mm-zoom-hint { font-size: 0.7em; color: #666; text-align: right; margin-top: 4px; }
+    `;
+    document.head.appendChild(el);
+  }
+
+  // ── Theme toggle button ──────────────────────────────────────────────────
+  function injectThemeToggle() {
+    if (document.getElementById('mm-theme-toggle')) return;
+    const btn = document.createElement('button');
+    btn.id = 'mm-theme-toggle';
+    btn.textContent = '⬡ Diagram Theme: Neutral';
+    btn.style.cssText = [
+      'position:fixed', 'bottom:16px', 'right:16px', 'z-index:99999',
+      'font-size:0.75em', 'padding:5px 12px', 'border-radius:4px',
+      'border:1px solid #555', 'background:#2a2a3e', 'color:#ccc',
+      'cursor:pointer', 'user-select:none', 'transition:background 0.15s'
+    ].join(';');
+    btn.addEventListener('mouseover', () => btn.style.background = '#3a3a55');
+    btn.addEventListener('mouseout', () => btn.style.background = '#2a2a3e');
+    btn.addEventListener('click', () => {
+      currentTheme = currentTheme === 'neutral' ? 'default' : 'neutral';
+      btn.textContent = `⬡ Diagram Theme: ${currentTheme === 'neutral' ? 'Neutral' : 'Default'}`;
+      if (window.mermaid) {
+        window.mermaid.initialize({ startOnLoad: false, theme: currentTheme, securityLevel: 'loose' });
+      }
+      // Remove rendered wrappers and re-render all blocks
+      document.querySelectorAll('code.hljs.language-mermaid[data-mermaid-rendered]')
+        .forEach(b => delete b.dataset.mermaidRendered);
+      document.querySelectorAll('.mm-wrapper').forEach(w => w.remove());
+      document.querySelectorAll('pre[style*="display: none"]').forEach(p => p.style.display = '');
+      document.querySelectorAll('code.hljs.language-mermaid').forEach(b => scheduleRender(b));
+    });
+    document.body.appendChild(btn);
+  }
+
+  // ── Zoom: open in new window ─────────────────────────────────────────────
+  function openInWindow(svgHTML) {
+    const win = window.open('', '_blank', 'width=1200,height=800');
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Mermaid Diagram</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #ffffff; display: flex; align-items: flex-start;
+           justify-content: center; min-height: 100vh; padding: 20px; }
+    svg { width: 100%; height: auto; display: block; }
+  </style>
+</head>
+<body>${svgHTML}</body>
+</html>`);
+    win.document.close();
+    win.addEventListener('load', () => {
+      const svg = win.document.querySelector('svg');
+      if (svg) {
+        svg.removeAttribute('width');
+        svg.removeAttribute('height');
+        svg.removeAttribute('style');
+        svg.style.cssText = 'width:100%;height:auto;display:block;';
+      }
+    });
+  }
+
+  // ── Mermaid loading ──────────────────────────────────────────────────────
+  function loadMermaid(cb) {
+    if (mermaidReady) return cb();
+    if (window._mermaidLoading) {
+      window._mermaidCallbacks = window._mermaidCallbacks || [];
+      window._mermaidCallbacks.push(cb);
+      return;
+    }
+    window._mermaidLoading = true;
+    const s = document.createElement('script');
+    s.src = MERMAID_CDN;
+    s.onload = () => {
+      window.mermaid.initialize({ startOnLoad: false, theme: currentTheme, securityLevel: 'loose' });
+      mermaidReady = true;
+      cb();
+      (window._mermaidCallbacks || []).forEach(fn => fn());
+      window._mermaidCallbacks = [];
+    };
+    document.head.appendChild(s);
+  }
+
+  // ── Per-block settle logic ───────────────────────────────────────────────
+  function scheduleRender(block) {
+    if (processing.has(block) || block.dataset.mermaidRendered) return;
+    const current = block.textContent;
+    const last = blockSnapshots.get(block);
+
+    if (current !== last) {
+      // Content still changing — reset the settle timer
+      blockSnapshots.set(block, current);
+      clearTimeout(blockTimers.get(block));
+      blockTimers.set(block, setTimeout(() => scheduleRender(block), SETTLE_MS));
+    } else {
+      // Content unchanged for SETTLE_MS — safe to render
+      clearTimeout(blockTimers.get(block));
+      renderBlock(block);
+    }
+  }
+
+  // ── Render a single block ────────────────────────────────────────────────
+  async function renderBlock(block) {
+    if (processing.has(block) || block.dataset.mermaidRendered) return;
+    processing.add(block);
+    block.dataset.mermaidRendered = 'true';
+
+    const code = block.textContent.trim();
+    const id = `mermaid-diagram-${Date.now()}`;
+    const pre = block.closest('pre') || block;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'mm-wrapper';
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'mm-toolbar';
+
+    const btnDiagram = document.createElement('button');
+    btnDiagram.className = 'mm-btn active';
+    btnDiagram.textContent = '⬡ Diagram';
+
+    const btnRaw = document.createElement('button');
+    btnRaw.className = 'mm-btn';
+    btnRaw.textContent = '‹› Raw';
+
+    toolbar.appendChild(btnDiagram);
+    toolbar.appendChild(btnRaw);
+
+    const diagramDiv = document.createElement('div');
+    diagramDiv.className = 'mm-diagram';
+
+    const hint = document.createElement('div');
+    hint.className = 'mm-zoom-hint';
+    hint.textContent = 'Click to zoom';
+
+    wrapper.appendChild(toolbar);
+    wrapper.appendChild(diagramDiv);
+    wrapper.appendChild(hint);
+
+    loadMermaid(async () => {
+      try {
+        const { svg } = await window.mermaid.render(id, code);
+        diagramDiv.innerHTML = svg;
+        diagramDiv.addEventListener('click', () => openInWindow(svg));
+
+        btnRaw.addEventListener('click', () => {
+          diagramDiv.style.display = 'none';
+          hint.style.display = 'none';
+          pre.style.display = '';
+          btnRaw.classList.add('active');
+          btnDiagram.classList.remove('active');
+        });
+        btnDiagram.addEventListener('click', () => {
+          diagramDiv.style.display = '';
+          hint.style.display = '';
+          pre.style.display = 'none';
+          btnDiagram.classList.add('active');
+          btnRaw.classList.remove('active');
+        });
+
+        pre.style.display = 'none';
+        pre.insertAdjacentElement('afterend', wrapper);
+
+      } catch (err) {
+        diagramDiv.innerHTML = `<pre style="color:red;font-size:0.85em">Mermaid error: ${err.message}</pre>`;
+        hint.style.display = 'none';
+        pre.style.display = 'none';
+        pre.insertAdjacentElement('afterend', wrapper);
+        console.warn('[Mermaid userscript] Render error:', err);
+      }
+      processing.delete(block);
+    });
+  }
+
+  // ── MutationObserver ─────────────────────────────────────────────────────
+  // Watch only for new nodes added - not characterData changes.
+  // When a new mermaid block appears, start polling its content.
+  // Only render once content has been stable for SETTLE_MS.
+  const seen = new WeakSet();
+
+  function pollBlock(block) {
+    if (processing.has(block) || block.dataset.mermaidRendered) return;
+    const current = block.textContent;
+    const last = blockSnapshots.get(block);
+    blockSnapshots.set(block, current);
+
+    if (current !== last) {
+      // Still changing - poll again
+      blockTimers.set(block, setTimeout(() => pollBlock(block), SETTLE_MS));
+    } else if (current.trim().length > 0) {
+      // Stable and non-empty - render
+      renderBlock(block);
+    } else {
+      // Empty - keep waiting
+      blockTimers.set(block, setTimeout(() => pollBlock(block), SETTLE_MS));
+    }
+  }
+
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(m => {
+      m.addedNodes.forEach(node => {
+        if (node.nodeType !== 1) return; // elements only
+        const blocks = node.matches?.('code.hljs.language-mermaid')
+          ? [node]
+          : [...node.querySelectorAll('code.hljs.language-mermaid')];
+        blocks.forEach(block => {
+          if (seen.has(block)) return;
+          seen.add(block);
+          // Initial snapshot then start polling
+          blockSnapshots.set(block, block.textContent);
+          blockTimers.set(block, setTimeout(() => pollBlock(block), SETTLE_MS));
+        });
+      });
+    });
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  injectStyles();
+  injectThemeToggle();
+  window.addEventListener('load', () => {
+    document.querySelectorAll('code.hljs.language-mermaid').forEach(scheduleRender);
+  });
+
+})();
