@@ -20,11 +20,7 @@ Now llm_client has a 'responses.create' function: for example:
     print(response.output_text)
 ```
 
-swap_role_names is a dictionary of pairs of strings, where values should be swapped. For example: {'developer': 'system'} indicates that we want to swap 'developer' as a role to 'system' instead. This is because some installations expect 'developer' to be a role, while others expect 'system' to be a role. For example, if you need to swap change 'developer' to 'system' you do this:
-```
-    monkey_patch_responses_api(llm, {'developer': 'system'})
-
-```
+It will automatically swap 'developer' for 'system' (via ```_role_to_chat_completion_role```): if you don't want that, just adjust it to return the value you passed. My llama gets snippy about 'developer' being passed.
 
 Remember: It's a fake endpoint so you are not really talking to responses.create() but to chat.create()
 The original code was created by claudeai but I've modified to work better. Well, to work at all but it saved a
