@@ -48,21 +48,30 @@ from openai.types.responses.response_usage import (
     OutputTokensDetails,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+# This is used to swap role-names if required. Uses value passed to
+# monkey_patch_responses_api() and is used by _role_to_chat_completion_role()
+_role_name_swaps: dict = {}
+
 
 def _make_id(prefix: str = "resp") -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
-def _role_to_chat_completion_role(role: str) -> str:
+def _role_to_chat_completion_role(role_name: str) -> str:
     """
     Map Responses-API roles to chat-completions roles - llama.cpp gets snippy
-    about 'developer' (at least my one does).
+    about 'developer' (at least my one does) and wants 'system', so I pass
+    {'developer': 'system'} but you can pass more than one:
+    {'developer': 'system', 'fred': 'user'}
     """
-    return "system" if role == "developer" else role
+    # If the passed role-name is in our required swaps in _role_name_swaps, return the
+    # swapped value, otherwise just return the role-name unchanged.
+    return _role_name_swaps.get(role_name, role_name)
+    # It's a bit like: return "system" if role_name == "developer" else role_name
 
 
 def _input_to_messages(input_val: Any) -> list[dict]:
@@ -320,7 +329,7 @@ class _ResponsesNamespace:
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def monkey_patch_responses_api(client: Any) -> None:
+def monkey_patch_responses_api(client: Any, role_name_swaps: dict = None) -> None:
     """
     Attach a `responses` attribute to *client* so that
     ``client.responses.create(...)`` works like the real Responses API,
@@ -330,5 +339,17 @@ def monkey_patch_responses_api(client: Any) -> None:
     ----------
     client : openai.OpenAI (or compatible)
         The client instance to patch.  Modified in-place.
+
+    role_name_swaps: dict
+        A dict of 'role' names to change. Passing {'developer': 'system'} means:
+
+            "if you see 'developer' as a role-name, change it to 'system'"
+
+        That is,
+        {'role': 'developer'... would become {'role': 'system'... in any call passed
+        to the responses API
+        It's used by _role_to_chat_completion_role()
     """
+    global _role_name_swaps
+    _role_name_swaps = role_name_swaps
     client.responses = _ResponsesNamespace(client)
