@@ -20,8 +20,13 @@ Now llm_client has a 'responses.create' function: for example:
     print(response.output_text)
 ```
 
-It will automatically swap 'developer' for 'system' (via ```_role_to_chat_completion_role```): if you don't want that, just adjust it to return the value you passed. My llama gets snippy about 'developer' being passed.
+You can also have it automatically swap role-names if you pass them in a dictionary, thus:
 
-Remember: It's a fake endpoint so you are not really talking to responses.create() but to chat.create()
+```
+    monkey_patch_responses_api(client=llm, role_name_swaps={'developer': 'system'})
+```
+This reads as "If you encounter 'developer' as a role-name, swap the role-name to 'system'": my llama.cpp doesn't like 'developer' so it's useful for me.
+
+Remember: It's a fake endpoint so you are not really talking to responses.create() but to chat.create(). It should mostly work. Mostly.
 The original code was created by claudeai but I've modified to work better. Well, to work at all but it saved a
 lot of typing initially!
