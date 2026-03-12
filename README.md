@@ -8,7 +8,7 @@ This code (in the Python file) applies a monkey-patch an OpenAI client to substi
 The single line is : ```monkey_patch_responses_api(llm_client)```.
 
 It supports all the calls and parameters... well, you can pass them, I've not tested them all, plus I only use a few.
-It's rough and ready but should be useful here and there where there's no support for 'responses'
+It's rough and ready but should be useful here and there where there's no support for 'responses'. 
 
 I use it like this:
 ```
@@ -29,6 +29,7 @@ You can also have it automatically swap role-names if you pass them in a diction
 ```
 This reads as "If you encounter 'developer' as a role-name, swap the role-name to 'system'": my llama.cpp doesn't like 'developer' so it's useful for me.
 
-Remember: It's a fake endpoint so you are not really talking to responses.create() but to chat.create(). It should mostly work. Mostly.
+Remember: It's a fake endpoint so you are not really talking to responses.create() but to chat.create(). It should mostly work. Mostly. Availability of some things will depend upon the model (some don't support tool use, for example). I tend to use Qwen2.5 1.5B Instruct (https://huggingface.co/Qwen/Qwen2.5-1.5B) which does (and performs quite well on older kit).
+
 The original code was created by claudeai but I've modified to work better. Well, to work at all but it saved a
 lot of typing initially!
